@@ -2,5 +2,6 @@
 <project version="4">
   <component name="VcsDirectoryMappings">
     <mapping directory="" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/web-engineering-kfupm-classroom-2-1-html-basics-demo_2.1_html_basics" vcs="Git" />
   </component>
 </project>
