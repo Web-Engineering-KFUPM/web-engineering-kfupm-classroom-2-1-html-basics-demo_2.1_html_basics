@@ -65,7 +65,7 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install deps (ci if lockfile, else install)
+      - name: Install deps (ci if lockfile exists)
         run: |
           if [ -f package-lock.json ]; then
             npm ci
