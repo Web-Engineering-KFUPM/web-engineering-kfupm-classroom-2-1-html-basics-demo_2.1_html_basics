@@ -5,8 +5,8 @@
 //  - Code Quality: 25
 // Submission Time (0–25) can be added via env SUBMISSION_POINTS (default 0).
 
-import fs from 'fs-extra';
-import cheerio from 'cheerio';
+import * as fs from 'fs-extra';
+import { load } from 'cheerio';
 
 const HTML_FILE = process.env.HTML_FILE || 'index.html';
 const SUBMISSION_POINTS = Number(process.env.SUBMISSION_POINTS || 0);
@@ -32,7 +32,7 @@ function resultRow(id, desc, pass, pts) {
 }
 
 function grade(html) {
-  const $ = cheerio.load(html, { decodeEntities: false });
+  const $ = load(html, { decodeEntities: false });
 
   // ===== TODOs Completion (25 pts) =====
   const todoChecks = [];
