@@ -13,10 +13,7 @@ const SUBMISSION_POINTS = Number(process.env.SUBMISSION_POINTS || 0);
 const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
 
 // Helpers
-const norm = (s) => (s || '')
-  .replace(/\s+/g, ' ')
-  .trim()
-  .toLowerCase();
+const norm = (s) => (s || '').replace(/\s+/g, ' ').trim().toLowerCase();
 
 const containsText = ($el, text) => norm($el.text()).includes(norm(text));
 const hasExactText = ($el, text) => norm($el.text()) === norm(text); // not used for grading strictly
@@ -175,7 +172,7 @@ function grade(html) {
   // Build markdown rows
   function rowsMd(arr) {
     return arr.map(r => `| ${r.pass ? '✅' : '❌'} | ${r.desc} | ${r.ptsEarned.toFixed(2)} / ${r.ptsMax} |`).join('\n');
-    }
+  }
 
   const md = `# Automated Grade: 2.1 HTML Basics
 

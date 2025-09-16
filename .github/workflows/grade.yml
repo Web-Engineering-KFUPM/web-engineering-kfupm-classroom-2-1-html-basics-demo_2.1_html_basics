@@ -14,10 +14,10 @@ env:
   # Converted to UTC: 2025-09-04T17:59:00Z
   DEADLINE_UTC: "2025-09-04T17:59:00Z"
 
-  # Submission points policy
-  MAX_SUBMISSION_POINTS: "25"   # on-time or early
-  MIN_SUBMISSION_POINTS: "0"    # late → 0
-  LATE_DEDUCT_PER_DAY: "25"     # deduct all if late at all
+  # Submission points policy (on-time → 25, any late → 0)
+  MAX_SUBMISSION_POINTS: "25"
+  MIN_SUBMISSION_POINTS: "0"
+  LATE_DEDUCT_PER_DAY: "25"  # full deduction for any lateness
 
   # HTML file students should submit
   HTML_FILE: "index.html"
@@ -35,7 +35,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
           echo "Deadline (UTC):  ${DEADLINE_UTC}"
           latest_ts="$(git log -1 --format=%cI)"
           echo "Latest commit:   ${latest_ts}"
@@ -51,7 +50,7 @@ jobs:
             pts="${max_pts}"
             echo "On-time submission → ${pts} points"
           else
-            pts=$(( max_pts - per_day )) # deduct full 25
+            pts=$(( max_pts - per_day ))
             if [ "${pts}" -lt "${min_pts}" ]; then
               pts="${min_pts}"
             fi
@@ -65,11 +64,15 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install deps (ci if lockfile exists)
+      - name: Install deps (use ci if lockfile exists)
+        shell: bash
         run: |
-          if [ -f package-lock.json ]; then
+          set -euo pipefail
+          if [[ -f package-lock.json ]]; then
+            echo "package-lock.json found → using npm ci"
             npm ci
           else
+            echo "No lockfile → using npm install"
             npm install --no-audit --no-fund
           fi
 
