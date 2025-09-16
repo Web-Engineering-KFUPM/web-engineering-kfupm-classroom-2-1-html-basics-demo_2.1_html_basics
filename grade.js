@@ -5,7 +5,7 @@
 //  - Code Quality: 25
 // Submission Time (0–25) can be added via env SUBMISSION_POINTS (default 0).
 
-import * as fs from 'fs-extra';
+import { pathExists, readFile, writeFile, writeJson } from 'fs-extra';
 import { load } from 'cheerio';
 
 const HTML_FILE = process.env.HTML_FILE || 'index.html';
@@ -59,26 +59,22 @@ function grade(html) {
 
   const todoScore = todoChecks.reduce((s, r) => s + r.ptsEarned, 0);
   const todoMax = todoChecks.reduce((s, r) => s + r.ptsMax, 0);
-  // Scale TODOs to 25
   const TODO_WEIGHT = 25;
   const todoScaled = Math.round((todoScore / todoMax) * TODO_WEIGHT * 100) / 100;
 
   // ===== Correctness of Output (25 pts) =====
   const corrChecks = [];
-  // Headings text (flexible, case/space-insensitive)
   const h1Ok = $('h1').toArray().some(el => containsText($(el), 'swe 363'));
   const h2Ok = $('h2').toArray().some(el => containsText($(el), 'introduction to html'));
   corrChecks.push(resultRow('h1_text', 'H1 contains "SWE 363"', h1Ok, 4));
   corrChecks.push(resultRow('h2_text', 'H2 contains "Introduction to HTML"', h2Ok, 3));
 
-  // Description paragraph contains key phrase loosely
   const pDescOk = $('p').toArray().some(el => {
     const t = norm($(el).text());
     return t.includes('course') && (t.includes('html') || t.includes('css') || t.includes('js'));
   });
   corrChecks.push(resultRow('p_desc_text', 'Description mentions course & HTML/CSS/JS', pDescOk, 3));
 
-  // Topics list: following a Topics h3, ensure a UL with >=4 LI
   let topicsUlOk = false;
   if (topicsH3.length) {
     const nextUl = topicsH3.nextAll('ul').first();
@@ -86,7 +82,6 @@ function grade(html) {
   }
   corrChecks.push(resultRow('topics_ul', 'Course Topics: UL has ≥ 4 items', topicsUlOk, 4));
 
-  // Nested list: Web Technologies with Frontend/Backend each having a nested UL (≥3 items typical)
   let frontNestedOk = false, backNestedOk = false;
   if (webTechH3.length) {
     const nextUl = webTechH3.nextAll('ul').first();
@@ -103,7 +98,6 @@ function grade(html) {
   corrChecks.push(resultRow('frontend_nested', 'Frontend has a nested list (≥3)', frontNestedOk, 3.5));
   corrChecks.push(resultRow('backend_nested', 'Backend has a nested list (≥3)', backNestedOk, 3.5));
 
-  // Table headers & rows (flexible text)
   const table = $('table').first();
   let theadHeadersOk = false, tbodyRowsOk = false;
   if (table.length) {
@@ -115,7 +109,6 @@ function grade(html) {
   corrChecks.push(resultRow('table_headers', 'Table headers present & correct', theadHeadersOk, 3.5));
   corrChecks.push(resultRow('table_rows', 'Table has ≥ 2 body rows', tbodyRowsOk, 3.5));
 
-  // Image specifics
   const img = $('img').first();
   const imgSrcOk = img.length ? norm(img.attr('src')).includes('kfupm') : false;
   const widthOk = img.length ? Number.isFinite(intAttr(img, 'width')) : false;
@@ -130,32 +123,26 @@ function grade(html) {
 
   // ===== Code Quality (25 pts) =====
   const qualChecks = [];
-  // Doctype
   const hasDoctype = /^<!doctype html>/i.test(html.trim());
   qualChecks.push(resultRow('doctype', 'Uses <!DOCTYPE html>', hasDoctype, 4));
 
-  // <html lang="...">
   const htmlEl = $('html');
   const langAttr = (htmlEl.attr('lang') || '').trim();
   qualChecks.push(resultRow('lang', '<html> has lang attribute', langAttr.length > 0, 4));
 
-  // <meta charset> & <title>
   const hasCharset = $('meta[charset], meta[http-equiv="Content-Type"][content*="charset"]').length > 0;
   const titleTxt = norm($('head title').first().text());
   qualChecks.push(resultRow('charset', 'Has <meta charset>', hasCharset, 4));
   qualChecks.push(resultRow('title', '<title> is non-empty', titleTxt.length > 0, 3));
 
-  // Nested lists properly nested under <li>
   let nestedUnderLiOk = true;
   $('ul > ul, ol > ul, ul > ol, ol > ol').each(() => { nestedUnderLiOk = false; });
   qualChecks.push(resultRow('list_nesting', 'Nested lists are inside <li>', nestedUnderLiOk, 5));
 
-  // Table uses thead/tbody
   const hasThead = table.length ? table.find('thead').length > 0 : false;
   const hasTbody = table.length ? table.find('tbody').length > 0 : false;
   qualChecks.push(resultRow('thead_tbody', 'Table uses <thead> and <tbody>', hasThead && hasTbody, 5));
 
-  // Image alt non-empty (accessibility)
   const altOk = img.length ? (img.attr('alt') || '').trim().length > 0 : false;
   qualChecks.push(resultRow('img_alt', 'Image has meaningful alt text', altOk, 4));
 
@@ -164,12 +151,10 @@ function grade(html) {
   const QUAL_WEIGHT = 25;
   const qualScaled = Math.round((qualScore / qualMax) * QUAL_WEIGHT * 100) / 100;
 
-  // Totals
   const autoScore75 = clamp(todoScaled + corrScaled + qualScaled, 0, 75);
   const submissionPts = clamp(SUBMISSION_POINTS, 0, 25);
   const finalScore100 = autoScore75 + submissionPts;
 
-  // Build markdown rows
   function rowsMd(arr) {
     return arr.map(r => `| ${r.pass ? '✅' : '❌'} | ${r.desc} | ${r.ptsEarned.toFixed(2)} / ${r.ptsMax} |`).join('\n');
   }
@@ -230,7 +215,7 @@ ${process.env.GITHUB_REPOSITORY || 'repo'},${autoScore75.toFixed(2)},${submissio
 }
 
 async function main() {
-  const exists = await fs.pathExists(HTML_FILE);
+  const exists = await pathExists(HTML_FILE);
   if (!exists) {
     const md = `# Automated Grade: 2.1 HTML Basics
 
@@ -242,22 +227,22 @@ async function main() {
 
 > Ensure your main HTML file is named \`index.html\` at the repo root (or set \`HTML_FILE\`).
 `;
-    await fs.writeFile('GRADE.md', md);
-    await fs.writeJson('grade_report.json', { error: `Missing ${HTML_FILE}`, auto_score_out_of_75: 0, submission_points_out_of_25: SUBMISSION_POINTS, final_score_out_of_100: SUBMISSION_POINTS }, { spaces: 2 });
-    await fs.writeFile('grade_report.csv', `repo,auto_score_75,submission_25,final_100\n${process.env.GITHUB_REPOSITORY || 'repo'},0,${SUBMISSION_POINTS},${SUBMISSION_POINTS}\n`);
+    await writeFile('GRADE.md', md);
+    await writeJson('grade_report.json', { error: `Missing ${HTML_FILE}`, auto_score_out_of_75: 0, submission_points_out_of_25: SUBMISSION_POINTS, final_score_out_of_100: SUBMISSION_POINTS }, { spaces: 2 });
+    await writeFile('grade_report.csv', `repo,auto_score_75,submission_25,final_100\n${process.env.GITHUB_REPOSITORY || 'repo'},0,${SUBMISSION_POINTS},${SUBMISSION_POINTS}\n`);
     return;
   }
 
-  const html = await fs.readFile(HTML_FILE, 'utf8');
+  const html = await readFile(HTML_FILE, 'utf8');
   const { md, jsonReport, csv } = grade(html);
 
-  await fs.writeFile('GRADE.md', md);
-  await fs.writeJson('grade_report.json', jsonReport, { spaces: 2 });
-  await fs.writeFile('grade_report.csv', csv);
+  await writeFile('GRADE.md', md);
+  await writeJson('grade_report.json', jsonReport, { spaces: 2 });
+  await writeFile('grade_report.csv', csv);
 }
 
 main().catch(async (e) => {
-  await fs.writeFile('GRADE.md', `# Automated Grade: 2.1 HTML Basics
+  await writeFile('GRADE.md', `# Automated Grade: 2.1 HTML Basics
 
 **Status:** ❌ Autograder crashed.
 
@@ -269,7 +254,7 @@ ${e.stack || e.message}
 **Submission Time Points (out of 25):** ${SUBMISSION_POINTS}  
 **Final Score (out of 100):** ${SUBMISSION_POINTS.toFixed(2)} / 100
 `);
-  await fs.writeJson('grade_report.json', { error: e.message, auto_score_out_of_75: 0, submission_points_out_of_25: SUBMISSION_POINTS, final_score_out_of_100: SUBMISSION_POINTS }, { spaces: 2 });
-  await fs.writeFile('grade_report.csv', `repo,auto_score_75,submission_25,final_100\n${process.env.GITHUB_REPOSITORY || 'repo'},0,${SUBMISSION_POINTS},${SUBMISSION_POINTS}\n`);
-  process.exit(0); // do not fail the workflow; report gracefully
+  await writeJson('grade_report.json', { error: e.message, auto_score_out_of_75: 0, submission_points_out_of_25: SUBMISSION_POINTS, final_score_out_of_100: SUBMISSION_POINTS }, { spaces: 2 });
+  await writeFile('grade_report.csv', `repo,auto_score_75,submission_25,final_100\n${process.env.GITHUB_REPOSITORY || 'repo'},0,${SUBMISSION_POINTS},${SUBMISSION_POINTS}\n`);
+  process.exit(0);
 });
