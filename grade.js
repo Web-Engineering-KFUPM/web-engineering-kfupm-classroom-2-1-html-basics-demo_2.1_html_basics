@@ -1,29 +1,35 @@
 // Autograder for "2.1 HTML Basics" (flexible matching)
-// Categories (75 pts auto):
-//  - TODOs Completion: 25
-//  - Correctness of Output: 25
-//  - Code Quality: 25
-// Submission Time (0–25) can be added via env SUBMISSION_POINTS (default 0).
+// Categories (75 pts auto): TODOs 25, Correctness 25, Code Quality 25
+// Submission Time (0–25) via env SUBMISSION_POINTS.
 
-import { pathExists, readFile, writeFile, writeJson } from 'fs-extra';
+import { access, readFile, writeFile } from 'fs/promises';
+import { constants as FS } from 'fs';
 import { load } from 'cheerio';
 
 const HTML_FILE = process.env.HTML_FILE || 'index.html';
 const SUBMISSION_POINTS = Number(process.env.SUBMISSION_POINTS || 0);
 const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
 
-// Helpers
-const norm = (s) => (s || '').replace(/\s+/g, ' ').trim().toLowerCase();
+// --- minimal helpers to replace fs-extra ---
+async function pathExists(p) {
+  try { await access(p, FS.F_OK); return true; } catch { return false; }
+}
+async function writeJson(path, obj, opts = {}) {
+  const spaces = typeof opts.spaces === 'number' ? opts.spaces : 0;
+  await writeFile(path, JSON.stringify(obj, null, spaces));
+}
 
+// --- text helpers ---
+const norm = (s) => (s || '').replace(/\s+/g, ' ').trim().toLowerCase();
 const containsText = ($el, text) => norm($el.text()).includes(norm(text));
-const hasExactText = ($el, text) => norm($el.text()) === norm(text); // not used for grading strictly
+const hasExactText = ($el, text) => norm($el.text()) === norm(text); // not used
 const intAttr = ($el, name) => {
   const v = ($el.attr(name) || '').trim();
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
 };
 
-// Build results
+// build result rows
 function resultRow(id, desc, pass, pts) {
   return { id, desc, pass: !!pass, ptsEarned: pass ? pts : 0, ptsMax: pts };
 }
@@ -33,12 +39,9 @@ function grade(html) {
 
   // ===== TODOs Completion (25 pts) =====
   const todoChecks = [];
-  // Step 2: text elements present
   todoChecks.push(resultRow('h1_present', 'Has an <h1> element', $('h1').length >= 1, 5));
   todoChecks.push(resultRow('h2_present', 'Has an <h2> element', $('h2').length >= 1, 4));
   todoChecks.push(resultRow('p_desc_present', 'Has a paragraph with course description', $('p').length >= 1, 4));
-
-  // Formatting paragraphs: strong, em, mark (allow across any <p>)
   const hasStrongInP = $('p strong').length >= 1;
   const hasEmInP = $('p em').length >= 1;
   const hasMarkInP = $('p mark').length >= 1;
@@ -46,29 +49,25 @@ function grade(html) {
   todoChecks.push(resultRow('p_em', 'Has a <p> with <em>', hasEmInP, 3));
   todoChecks.push(resultRow('p_mark', 'Has a <p> with <mark>', hasMarkInP, 3));
 
-  // Lists: topics + nested technologies
   const topicsH3 = $('h3').filter((_, el) => containsText($(el), 'course topics')).first();
   const webTechH3 = $('h3').filter((_, el) => containsText($(el), 'web technologies')).first();
   todoChecks.push(resultRow('h3_topics', 'Has <h3> "Course Topics:"', topicsH3.length > 0, 1.5));
   todoChecks.push(resultRow('h3_webtech', 'Has <h3> "Web Technologies:"', webTechH3.length > 0, 1.5));
-
-  // Table present
-  todoChecks.push(resultRow('table_present', 'Has a <table> with data', $('table').length >= 1, 0)); // count in correctness/quality
-  // Image present
-  todoChecks.push(resultRow('img_present', 'Has an <img> with alt text', $('img[alt]').length >= 1, 0)); // scored later
+  // presence markers (scored elsewhere)
+  todoChecks.push(resultRow('table_present', 'Has a <table> with data', $('table').length >= 1, 0));
+  todoChecks.push(resultRow('img_present', 'Has an <img> with alt text', $('img[alt]').length >= 1, 0));
 
   const todoScore = todoChecks.reduce((s, r) => s + r.ptsEarned, 0);
   const todoMax = todoChecks.reduce((s, r) => s + r.ptsMax, 0);
   const TODO_WEIGHT = 25;
   const todoScaled = Math.round((todoScore / todoMax) * TODO_WEIGHT * 100) / 100;
 
-  // ===== Correctness of Output (25 pts) =====
+  // ===== Correctness (25 pts) =====
   const corrChecks = [];
   const h1Ok = $('h1').toArray().some(el => containsText($(el), 'swe 363'));
   const h2Ok = $('h2').toArray().some(el => containsText($(el), 'introduction to html'));
   corrChecks.push(resultRow('h1_text', 'H1 contains "SWE 363"', h1Ok, 4));
   corrChecks.push(resultRow('h2_text', 'H2 contains "Introduction to HTML"', h2Ok, 3));
-
   const pDescOk = $('p').toArray().some(el => {
     const t = norm($(el).text());
     return t.includes('course') && (t.includes('html') || t.includes('css') || t.includes('js'));
@@ -125,24 +124,19 @@ function grade(html) {
   const qualChecks = [];
   const hasDoctype = /^<!doctype html>/i.test(html.trim());
   qualChecks.push(resultRow('doctype', 'Uses <!DOCTYPE html>', hasDoctype, 4));
-
   const htmlEl = $('html');
   const langAttr = (htmlEl.attr('lang') || '').trim();
   qualChecks.push(resultRow('lang', '<html> has lang attribute', langAttr.length > 0, 4));
-
   const hasCharset = $('meta[charset], meta[http-equiv="Content-Type"][content*="charset"]').length > 0;
   const titleTxt = norm($('head title').first().text());
   qualChecks.push(resultRow('charset', 'Has <meta charset>', hasCharset, 4));
   qualChecks.push(resultRow('title', '<title> is non-empty', titleTxt.length > 0, 3));
-
   let nestedUnderLiOk = true;
   $('ul > ul, ol > ul, ul > ol, ol > ol').each(() => { nestedUnderLiOk = false; });
   qualChecks.push(resultRow('list_nesting', 'Nested lists are inside <li>', nestedUnderLiOk, 5));
-
   const hasThead = table.length ? table.find('thead').length > 0 : false;
   const hasTbody = table.length ? table.find('tbody').length > 0 : false;
   qualChecks.push(resultRow('thead_tbody', 'Table uses <thead> and <tbody>', hasThead && hasTbody, 5));
-
   const altOk = img.length ? (img.attr('alt') || '').trim().length > 0 : false;
   qualChecks.push(resultRow('img_alt', 'Image has meaningful alt text', altOk, 4));
 
@@ -151,13 +145,13 @@ function grade(html) {
   const QUAL_WEIGHT = 25;
   const qualScaled = Math.round((qualScore / qualMax) * QUAL_WEIGHT * 100) / 100;
 
+  // totals
   const autoScore75 = clamp(todoScaled + corrScaled + qualScaled, 0, 75);
   const submissionPts = clamp(SUBMISSION_POINTS, 0, 25);
   const finalScore100 = autoScore75 + submissionPts;
 
-  function rowsMd(arr) {
-    return arr.map(r => `| ${r.pass ? '✅' : '❌'} | ${r.desc} | ${r.ptsEarned.toFixed(2)} / ${r.ptsMax} |`).join('\n');
-  }
+  const rowsMd = (arr) =>
+    arr.map(r => `| ${r.pass ? '✅' : '❌'} | ${r.desc} | ${r.ptsEarned.toFixed(2)} / ${r.ptsMax} |`).join('\n');
 
   const md = `# Automated Grade: 2.1 HTML Basics
 
@@ -200,11 +194,7 @@ ${rowsMd(qualChecks)}
     quality_scaled: qualScaled,
     submission_points_out_of_25: submissionPts,
     final_score_out_of_100: finalScore100,
-    details: {
-      todos: todoChecks,
-      correctness: corrChecks,
-      quality: qualChecks
-    }
+    details: { todos: todoChecks, correctness: corrChecks, quality: qualChecks }
   };
 
   const csv = `repo,auto_score_75,submission_25,final_100
