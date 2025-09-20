@@ -1,13 +1,32 @@
-// Autograder for "2.1 HTML Basics" (flexible matching)
-// Categories (75 pts auto): TODOs 25, Correctness 25, Code Quality 25
-// Submission Time (0–25) via env SUBMISSION_POINTS.
+// Autograder for "2.1 HTML Basics" (structure-focused, extra-flexible)
+// Sections (75 pts auto): TODOs 25, Correctness 25, Code Quality 25
+// Submission Time (0–25): on-time = 25, late = 12.5 (half credit)
+//
+// ENV VARS:
+//   HTML_FILE (default: index.html)
+//   SUBMISSION_POINTS (optional numeric override 0..25; if LATE, capped at 12.5)
+//   LATE_SUBMISSION ("1"/"true" => late) OR SUBMISSION_STATUS ("late"|"on-time")
+//
+// Notes:
+// - Text/content keywords are ignored. We only require structural presence
+//   and that list items aren't empty (to ensure students actually added items).
+// - Very forgiving: case, spacing, and specific words are NOT required.
 
 import { access, readFile, writeFile } from 'fs/promises';
 import { constants as FS } from 'fs';
 import { load } from 'cheerio';
 
 const HTML_FILE = process.env.HTML_FILE || 'index.html';
-const SUBMISSION_POINTS = Number(process.env.SUBMISSION_POINTS || 0);
+const SUBMISSION_POINTS_ENV = process.env.SUBMISSION_POINTS;
+const SUBMISSION_POINTS_NUM = Number.isFinite(Number(SUBMISSION_POINTS_ENV))
+  ? Number(SUBMISSION_POINTS_ENV)
+  : null;
+
+const isLate =
+  String(process.env.LATE_SUBMISSION || '').toLowerCase() === '1' ||
+  String(process.env.LATE_SUBMISSION || '').toLowerCase() === 'true' ||
+  String(process.env.SUBMISSION_STATUS || '').toLowerCase() === 'late';
+
 const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
 
 // --- minimal helpers to replace fs-extra ---
@@ -19,100 +38,105 @@ async function writeJson(path, obj, opts = {}) {
   await writeFile(path, JSON.stringify(obj, null, spaces));
 }
 
-// --- text helpers ---
-const norm = (s) => (s || '').replace(/\s+/g, ' ').trim().toLowerCase();
-const containsText = ($el, text) => norm($el.text()).includes(norm(text));
-const hasExactText = ($el, text) => norm($el.text()) === norm(text); // not used
-const intAttr = ($el, name) => {
-  const v = ($el.attr(name) || '').trim();
-  const n = Number(v);
-  return Number.isFinite(n) ? n : null;
-};
-
 // build result rows
 function resultRow(id, desc, pass, pts) {
   return { id, desc, pass: !!pass, ptsEarned: pass ? pts : 0, ptsMax: pts };
 }
 
+// count direct <li> with non-empty text (ignores exact content/keywords)
+function countDirectLiWithText($, $ul) {
+  let count = 0;
+  $ul.find('> li').each((_, li) => {
+    const txt = ($(li).text() || '').replace(/\s+/g, ' ').trim();
+    if (txt.length > 0) count++;
+  });
+  return count;
+}
+
 function grade(html) {
   const $ = load(html, { decodeEntities: false });
+
+  const $tables = $('table');
+  const $firstTable = $tables.first();
+  const $imgs = $('img');
+  const $firstImg = $imgs.first();
 
   // ===== TODOs Completion (25 pts) =====
   const todoChecks = [];
   todoChecks.push(resultRow('h1_present', 'Has an <h1> element', $('h1').length >= 1, 5));
   todoChecks.push(resultRow('h2_present', 'Has an <h2> element', $('h2').length >= 1, 4));
-  todoChecks.push(resultRow('p_desc_present', 'Has a paragraph with course description', $('p').length >= 1, 4));
-  const hasStrongInP = $('p strong').length >= 1;
-  const hasEmInP = $('p em').length >= 1;
-  const hasMarkInP = $('p mark').length >= 1;
-  todoChecks.push(resultRow('p_strong', 'Has a <p> with <strong>', hasStrongInP, 3));
-  todoChecks.push(resultRow('p_em', 'Has a <p> with <em>', hasEmInP, 3));
-  todoChecks.push(resultRow('p_mark', 'Has a <p> with <mark>', hasMarkInP, 3));
-
-  const topicsH3 = $('h3').filter((_, el) => containsText($(el), 'course topics')).first();
-  const webTechH3 = $('h3').filter((_, el) => containsText($(el), 'web technologies')).first();
-  todoChecks.push(resultRow('h3_topics', 'Has <h3> "Course Topics:"', topicsH3.length > 0, 1.5));
-  todoChecks.push(resultRow('h3_webtech', 'Has <h3> "Web Technologies:"', webTechH3.length > 0, 1.5));
-  // presence markers (scored elsewhere)
-  todoChecks.push(resultRow('table_present', 'Has a <table> with data', $('table').length >= 1, 0));
-  todoChecks.push(resultRow('img_present', 'Has an <img> with alt text', $('img[alt]').length >= 1, 0));
+  todoChecks.push(resultRow('p_present', 'Has at least one <p>', $('p').length >= 1, 4));
+  todoChecks.push(resultRow('p_strong', 'Has a <p> with <strong> inside', $('p strong').length >= 1, 3));
+  todoChecks.push(resultRow('p_em', 'Has a <p> with <em> inside', $('p em').length >= 1, 3));
+  todoChecks.push(resultRow('p_mark', 'Has a <p> with <mark> inside', $('p mark').length >= 1, 3));
+  // flexible: at least two <h3> (no specific text required)
+  todoChecks.push(resultRow('two_h3', 'Has at least two <h3> sections', $('h3').length >= 2, 1.5));
+  // presence markers
+  todoChecks.push(resultRow('table_present', 'Has a <table>', $tables.length >= 1, 0));
+  todoChecks.push(resultRow('img_present', 'Has an <img>', $imgs.length >= 1, 0));
 
   const todoScore = todoChecks.reduce((s, r) => s + r.ptsEarned, 0);
   const todoMax = todoChecks.reduce((s, r) => s + r.ptsMax, 0);
   const TODO_WEIGHT = 25;
   const todoScaled = Math.round((todoScore / todoMax) * TODO_WEIGHT * 100) / 100;
 
-  // ===== Correctness (25 pts) =====
+  // ===== Correctness of Output (25 pts) =====
+  // Extra-flexible lists:
+  // 1) "Course Topics": any <ul> with ≥ 3 direct <li> that have non-empty text.
+  // 2) "Web Technologies": ensure students made a list with items that look like technologies:
+  //    any <ul> with ≥ 3 direct <li> (non-empty), and ideally associated with a nearby <h3>.
   const corrChecks = [];
-  const h1Ok = $('h1').toArray().some(el => containsText($(el), 'swe 363'));
-  const h2Ok = $('h2').toArray().some(el => containsText($(el), 'introduction to html'));
-  corrChecks.push(resultRow('h1_text', 'H1 contains "SWE 363"', h1Ok, 4));
-  corrChecks.push(resultRow('h2_text', 'H2 contains "Introduction to HTML"', h2Ok, 3));
-  const pDescOk = $('p').toArray().some(el => {
-    const t = norm($(el).text());
-    return t.includes('course') && (t.includes('html') || t.includes('css') || t.includes('js'));
+
+  // (1) Any UL with >= 3 direct non-empty LI
+  const anyUlWith3TextItems = $('ul').toArray().some(ul => {
+    return countDirectLiWithText($, $(ul)) >= 3;
   });
-  corrChecks.push(resultRow('p_desc_text', 'Description mentions course & HTML/CSS/JS', pDescOk, 3));
+  corrChecks.push(
+    resultRow(
+      'ul_min3_items',
+      'Has a <ul> with ≥ 3 direct non-empty <li>',
+      anyUlWith3TextItems,
+      6 // give this a bit more weight since it covers "Course Topics" flexibly
+    )
+  );
 
-  let topicsUlOk = false;
-  if (topicsH3.length) {
-    const nextUl = topicsH3.nextAll('ul').first();
-    topicsUlOk = nextUl.length > 0 && nextUl.find('> li').length >= 4;
-  }
-  corrChecks.push(resultRow('topics_ul', 'Course Topics: UL has ≥ 4 items', topicsUlOk, 4));
-
-  let frontNestedOk = false, backNestedOk = false;
-  if (webTechH3.length) {
-    const nextUl = webTechH3.nextAll('ul').first();
-    if (nextUl.length) {
-      nextUl.find('> li').each((_, li) => {
-        const $li = $(li);
-        const text = norm($li.contents().filter((i, n) => n.type === 'text').text());
-        const childUl = $li.children('ul').first();
-        if (text.includes('frontend') && childUl.length && childUl.find('> li').length >= 3) frontNestedOk = true;
-        if (text.includes('backend') && childUl.length && childUl.find('> li').length >= 3) backNestedOk = true;
-      });
+  // (2) A UL colocated with an H3 (common pattern students will use)
+  // Find any <h3> whose next sibling UL has ≥ 3 direct non-empty LI
+  let h3UlWith3Ok = false;
+  $('h3').each((_, h3) => {
+    const $h3 = $(h3);
+    const $nextUl = $h3.nextAll('ul').first();
+    if ($nextUl.length && countDirectLiWithText($, $nextUl) >= 3) {
+      h3UlWith3Ok = true;
     }
-  }
-  corrChecks.push(resultRow('frontend_nested', 'Frontend has a nested list (≥3)', frontNestedOk, 3.5));
-  corrChecks.push(resultRow('backend_nested', 'Backend has a nested list (≥3)', backNestedOk, 3.5));
+  });
+  corrChecks.push(
+    resultRow(
+      'h3_followed_by_ul_min3',
+      'An <h3> is followed by a <ul> with ≥ 3 items',
+      h3UlWith3Ok,
+      6
+    )
+  );
 
-  const table = $('table').first();
+  // Keep table checks (structure only; no header text requirements)
   let theadHeadersOk = false, tbodyRowsOk = false;
-  if (table.length) {
-    const thTexts = table.find('thead th').toArray().map(el => norm($(el).text()));
-    const needed = ['student name', 'assignment 1', 'assignment 2', 'final grade'];
-    theadHeadersOk = needed.every(n => thTexts.some(t => t.includes(n)));
-    tbodyRowsOk = table.find('tbody tr').length >= 2;
+  if ($firstTable.length) {
+    const thCount = $firstTable.find('thead th').length;
+    theadHeadersOk = thCount >= 4;
+    tbodyRowsOk = $firstTable.find('tbody tr').length >= 2;
   }
-  corrChecks.push(resultRow('table_headers', 'Table headers present & correct', theadHeadersOk, 3.5));
-  corrChecks.push(resultRow('table_rows', 'Table has ≥ 2 body rows', tbodyRowsOk, 3.5));
+  corrChecks.push(resultRow('table_headers', 'Table <thead> has ≥ 4 <th>', theadHeadersOk, 6));
+  corrChecks.push(resultRow('table_rows', 'Table <tbody> has ≥ 2 rows', tbodyRowsOk, 5));
 
-  const img = $('img').first();
-  const imgSrcOk = img.length ? norm(img.attr('src')).includes('kfupm') : false;
-  const widthOk = img.length ? Number.isFinite(intAttr(img, 'width')) : false;
-  const heightOk = img.length ? Number.isFinite(intAttr(img, 'height')) : false;
-  corrChecks.push(resultRow('img_src', 'Image src references KFUPM asset', imgSrcOk, 2));
+  // Image numeric width & height
+  const intAttr = ($el, name) => {
+    const v = ($el.attr(name) || '').trim();
+    const n = Number(v);
+    return Number.isFinite(n);
+  };
+  const widthOk = $firstImg.length ? intAttr($firstImg, 'width') : false;
+  const heightOk = $firstImg.length ? intAttr($firstImg, 'height') : false;
   corrChecks.push(resultRow('img_wh', 'Image has numeric width & height', widthOk && heightOk, 2));
 
   const corrScore = corrChecks.reduce((s, r) => s + r.ptsEarned, 0);
@@ -123,37 +147,45 @@ function grade(html) {
   // ===== Code Quality (25 pts) =====
   const qualChecks = [];
   const hasDoctype = /^<!doctype html>/i.test(html.trim());
-  qualChecks.push(resultRow('doctype', 'Uses <!DOCTYPE html>', hasDoctype, 4));
+  qualChecks.push(resultRow('doctype', 'Uses <!DOCTYPE html> at top', hasDoctype, 4));
   const htmlEl = $('html');
   const langAttr = (htmlEl.attr('lang') || '').trim();
   qualChecks.push(resultRow('lang', '<html> has lang attribute', langAttr.length > 0, 4));
-  const hasCharset = $('meta[charset], meta[http-equiv="Content-Type"][content*="charset"]').length > 0;
-  const titleTxt = norm($('head title').first().text());
-  qualChecks.push(resultRow('charset', 'Has <meta charset>', hasCharset, 4));
-  qualChecks.push(resultRow('title', '<title> is non-empty', titleTxt.length > 0, 3));
+  const hasCharset =
+    $('meta[charset], meta[http-equiv="Content-Type"][content*="charset"]').length > 0;
+  qualChecks.push(resultRow('charset', 'Has <meta charset> (or equivalent)', hasCharset, 4));
+  const titleTxt = ($('head title').first().text() || '').trim();
+  qualChecks.push(resultRow('title', '<title> is present & non-empty', titleTxt.length > 0, 3));
   let nestedUnderLiOk = true;
   $('ul > ul, ol > ul, ul > ol, ol > ol').each(() => { nestedUnderLiOk = false; });
   qualChecks.push(resultRow('list_nesting', 'Nested lists are inside <li>', nestedUnderLiOk, 5));
-  const hasThead = table.length ? table.find('thead').length > 0 : false;
-  const hasTbody = table.length ? table.find('tbody').length > 0 : false;
+  const hasThead = $firstTable.length ? $firstTable.find('thead').length > 0 : false;
+  const hasTbody = $firstTable.length ? $firstTable.find('tbody').length > 0 : false;
   qualChecks.push(resultRow('thead_tbody', 'Table uses <thead> and <tbody>', hasThead && hasTbody, 5));
-  const altOk = img.length ? (img.attr('alt') || '').trim().length > 0 : false;
-  qualChecks.push(resultRow('img_alt', 'Image has meaningful alt text', altOk, 4));
+  const altOk = $firstImg.length ? (($firstImg.attr('alt') || '').trim().length > 0) : false;
+  qualChecks.push(resultRow('img_alt', 'Image has non-empty alt text', altOk, 4));
 
   const qualScore = qualChecks.reduce((s, r) => s + r.ptsEarned, 0);
   const qualMax = qualChecks.reduce((s, r) => s + r.ptsMax, 0);
   const QUAL_WEIGHT = 25;
   const qualScaled = Math.round((qualScore / qualMax) * QUAL_WEIGHT * 100) / 100;
 
-  // totals
+  // ===== Submission Time (25 pts) =====
+  let submissionPts;
+  if (SUBMISSION_POINTS_NUM !== null) {
+    submissionPts = clamp(SUBMISSION_POINTS_NUM, 0, 25);
+    if (isLate) submissionPts = Math.min(submissionPts, 12.5);
+  } else {
+    submissionPts = isLate ? 12.5 : 25;
+  }
+
   const autoScore75 = clamp(todoScaled + corrScaled + qualScaled, 0, 75);
-  const submissionPts = clamp(SUBMISSION_POINTS, 0, 25);
   const finalScore100 = autoScore75 + submissionPts;
 
   const rowsMd = (arr) =>
     arr.map(r => `| ${r.pass ? '✅' : '❌'} | ${r.desc} | ${r.ptsEarned.toFixed(2)} / ${r.ptsMax} |`).join('\n');
 
-  const md = `# Automated Grade: 2.1 HTML Basics
+  const md = `# Automated Grade: 2.1 HTML Basics (Structure-Focused, Extra-Flexible)
 
 **Automatic Score (out of 75):** **${autoScore75.toFixed(2)} / 75**
 
@@ -161,7 +193,7 @@ function grade(html) {
 - Correctness of Output (25): **${corrScaled.toFixed(2)}**
 - Code Quality (25): **${qualScaled.toFixed(2)}**
 
-**Submission Time Points (out of 25):** ${submissionPts}
+**Submission Time (out of 25):** ${submissionPts} ${isLate ? '(late: half credit)' : '(on-time)'}
 
 **Final Score (out of 100):** **${finalScore100.toFixed(2)} / 100**
 
@@ -183,8 +215,9 @@ ${rowsMd(corrChecks)}
 ${rowsMd(qualChecks)}
 
 **Notes:**
-- Matching is flexible: case-insensitive, ignores extra spaces, and validates structure (e.g., nested lists under <li>).
-- If your main file isn’t \`${HTML_FILE}\`, your instructor can set \`HTML_FILE\` in the workflow.
+- Ignores specific keywords inside tags; only requires non-empty list items.
+- Structure is emphasized: presence, counts, and valid nesting.
+- If your main file isn’t \`${HTML_FILE}\`, set \`HTML_FILE\` in the workflow.
 `;
 
   const jsonReport = {
@@ -194,6 +227,7 @@ ${rowsMd(qualChecks)}
     quality_scaled: qualScaled,
     submission_points_out_of_25: submissionPts,
     final_score_out_of_100: finalScore100,
+    is_late_submission: isLate,
     details: { todos: todoChecks, correctness: corrChecks, quality: qualChecks }
   };
 
@@ -206,20 +240,26 @@ ${process.env.GITHUB_REPOSITORY || 'repo'},${autoScore75.toFixed(2)},${submissio
 
 async function main() {
   const exists = await pathExists(HTML_FILE);
+  const fallback = isLate ? 12.5 : 25;
+
   if (!exists) {
-    const md = `# Automated Grade: 2.1 HTML Basics
+    const subPts = SUBMISSION_POINTS_NUM !== null
+      ? (isLate ? Math.min(clamp(SUBMISSION_POINTS_NUM, 0, 25), 12.5) : clamp(SUBMISSION_POINTS_NUM, 0, 25))
+      : fallback;
+
+    const md = `# Automated Grade: 2.1 HTML Basics (Structure-Focused, Extra-Flexible)
 
 **Status:** ❌ Could not find \`${HTML_FILE}\`.
 
 **Automatic Score (out of 75):** 0.00 / 75  
-**Submission Time Points (out of 25):** ${SUBMISSION_POINTS}  
-**Final Score (out of 100):** ${SUBMISSION_POINTS.toFixed(2)} / 100
+**Submission Time (out of 25):** ${subPts} ${isLate ? '(late: half credit)' : '(on-time)'}  
+**Final Score (out of 100):** ${subPts.toFixed(2)} / 100
 
 > Ensure your main HTML file is named \`index.html\` at the repo root (or set \`HTML_FILE\`).
 `;
     await writeFile('GRADE.md', md);
-    await writeJson('grade_report.json', { error: `Missing ${HTML_FILE}`, auto_score_out_of_75: 0, submission_points_out_of_25: SUBMISSION_POINTS, final_score_out_of_100: SUBMISSION_POINTS }, { spaces: 2 });
-    await writeFile('grade_report.csv', `repo,auto_score_75,submission_25,final_100\n${process.env.GITHUB_REPOSITORY || 'repo'},0,${SUBMISSION_POINTS},${SUBMISSION_POINTS}\n`);
+    await writeJson('grade_report.json', { error: `Missing ${HTML_FILE}`, auto_score_out_of_75: 0, submission_points_out_of_25: subPts, final_score_out_of_100: subPts }, { spaces: 2 });
+    await writeFile('grade_report.csv', `repo,auto_score_75,submission_25,final_100\n${process.env.GITHUB_REPOSITORY || 'repo'},0,${subPts},${subPts}\n`);
     return;
   }
 
@@ -232,7 +272,12 @@ async function main() {
 }
 
 main().catch(async (e) => {
-  await writeFile('GRADE.md', `# Automated Grade: 2.1 HTML Basics
+  const fallback = isLate ? 12.5 : 25;
+  const subPts = SUBMISSION_POINTS_NUM !== null
+    ? (isLate ? Math.min(clamp(SUBMISSION_POINTS_NUM, 0, 25), 12.5) : clamp(SUBMISSION_POINTS_NUM, 0, 25))
+    : fallback;
+
+  await writeFile('GRADE.md', `# Automated Grade: 2.1 HTML Basics (Structure-Focused, Extra-Flexible)
 
 **Status:** ❌ Autograder crashed.
 
@@ -241,10 +286,10 @@ ${e.stack || e.message}
 \`\`\`
 
 **Automatic Score (out of 75):** 0.00 / 75  
-**Submission Time Points (out of 25):** ${SUBMISSION_POINTS}  
-**Final Score (out of 100):** ${SUBMISSION_POINTS.toFixed(2)} / 100
+**Submission Time (out of 25):** ${subPts} ${isLate ? '(late: half credit)' : '(on-time)'}  
+**Final Score (out of 100):** ${subPts.toFixed(2)} / 100
 `);
-  await writeJson('grade_report.json', { error: e.message, auto_score_out_of_75: 0, submission_points_out_of_25: SUBMISSION_POINTS, final_score_out_of_100: SUBMISSION_POINTS }, { spaces: 2 });
-  await writeFile('grade_report.csv', `repo,auto_score_75,submission_25,final_100\n${process.env.GITHUB_REPOSITORY || 'repo'},0,${SUBMISSION_POINTS},${SUBMISSION_POINTS}\n`);
+  await writeJson('grade_report.json', { error: e.message, auto_score_out_of_75: 0, submission_points_out_of_25: subPts, final_score_out_of_100: subPts }, { spaces: 2 });
+  await writeFile('grade_report.csv', `repo,auto_score_75,submission_25,final_100\n${process.env.GITHUB_REPOSITORY || 'repo'},0,${subPts},${subPts}\n`);
   process.exit(0);
 });
