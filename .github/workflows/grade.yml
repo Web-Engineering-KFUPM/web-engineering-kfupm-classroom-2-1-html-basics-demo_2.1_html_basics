@@ -14,11 +14,6 @@ env:
   # Converted to UTC: 2025-09-04T17:59:00Z
   DEADLINE_UTC: "2025-09-04T17:59:00Z"
 
-  # Submission points policy (on-time → 25, any late → 0)
-  MAX_SUBMISSION_POINTS: "25"
-  MIN_SUBMISSION_POINTS: "0"
-  LATE_DEDUCT_PER_DAY: "25"  # full deduction for any lateness
-
   # HTML file students should submit
   HTML_FILE: "index.html"
 
@@ -30,7 +25,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Compute submission-time points
+      - name: Compute submission-time status
         id: submission_time
         shell: bash
         run: |
@@ -42,22 +37,17 @@ jobs:
           dl_epoch=$(date -u -d "${DEADLINE_UTC}" +%s)
           sub_epoch=$(date -u -d "${latest_ts}" +%s)
 
-          max_pts=${MAX_SUBMISSION_POINTS}
-          min_pts=${MIN_SUBMISSION_POINTS}
-          per_day=${LATE_DEDUCT_PER_DAY}
-
           if [ "${sub_epoch}" -le "${dl_epoch}" ]; then
-            pts="${max_pts}"
-            echo "On-time submission → ${pts} points"
+            status="on-time"
+            echo "On-time submission"
           else
-            pts=$(( max_pts - per_day ))
-            if [ "${pts}" -lt "${min_pts}" ]; then
-              pts="${min_pts}"
-            fi
-            echo "Late submission → ${pts} points"
+            status="late"
+            echo "Late submission (half credit in script)"
           fi
 
-          echo "points=${pts}" >> "$GITHUB_OUTPUT"
+          # Always give the script the max points (25); it will cap to 12.5 when late.
+          echo "points=25" >> "$GITHUB_OUTPUT"
+          echo "status=${status}" >> "$GITHUB_OUTPUT"
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -82,6 +72,7 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
           HTML_FILE: ${{ env.HTML_FILE }}
           SUBMISSION_POINTS: ${{ steps.submission_time.outputs.points }}
+          SUBMISSION_STATUS: ${{ steps.submission_time.outputs.status }}
 
       - name: Upload artifacts (CSV/JSON/MD)
         uses: actions/upload-artifact@v4
